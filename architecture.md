@@ -1,47 +1,49 @@
-# SmartDialer Architecture & Decisions
+# Architecture Decision Record: SmartDialer
 
-## Architecture Diagram
+## System Flow
 
 ```mermaid
 flowchart TD
-    Campaign[Campaign / Lead Source] --> Engine[Predictive Pacing Engine]
-    Engine --> Safety[Safety Controller]
-    Safety --> Allocator[Call Allocator & State Store]
+    Queue[(Lead Queue)] --> PaceCalc[Pacing Calculator]
+    PaceCalc --> Bounds[Safety Constraints Firewall]
+    Bounds --> CoreEngine[State Manager & Call Allocator]
     
-    subgraph Core System
-        Allocator -->|Allocates| Agent[Agent In-Memory Store]
-        Allocator -->|Tracks| Call[Call In-Memory Store]
+    subgraph Data Layer
+        CoreEngine <--> AgentMap[(Agent Dictionary)]
+        CoreEngine <--> CallMap[(Call Dictionary)]
     end
     
-    Allocator -->|Places Call| Provider[Telecom Provider Interface]
-    Provider -->|Async Events| Allocator
+    CoreEngine -->|Initiates outbound call| Telecom[Telecom API]
+    Telecom -->|HTTP Webhooks| CoreEngine
 ```
 
-## Architectural Decisions
+## Core Technology Choices
 
-### What did you choose?
-I chose to build the system entirely in **Python** using **asyncio**. The data layer uses an in-memory `DataStore` (dictionaries) with explicitly modeled concurrency using `asyncio.Lock` and logical versioning (Compare-And-Swap simulation).
+### Platform Selection
+The entire solution is engineered using **Python** and its native **asyncio** library. The data persistence layer is intentionally kept as in-memory dictionaries for this prototype phase, heavily relying on `asyncio.Lock` and logical version numbers to emulate Compare-And-Swap (CAS) semantics.
 
-### Why did you choose it?
-This tech assignment is about demonstrating concurrency control, safety bounds, and state machine transitions. Using Python and `asyncio` allows for thousands of concurrent mock network calls to run in a single thread, heavily stressing the state transition logic without needing to deploy Kafka, Redis, or PostgreSQL. A single-threaded event loop forces the developer to handle logical idempotency (duplicate events) and monotonic state transitions explicitly in the code.
+### Rationale
+The primary goal of this assignment is proving structural correctness—preventing race conditions, handling malformed network events, and enforcing hard safety limits. 
+By utilizing Python's `asyncio` event loop instead of immediately reaching for enterprise tools like Kafka or Postgres, the underlying logic is forced to the surface. It proves that the application can natively handle logical idempotency (ignoring duplicate webhook events) and enforce monotonic state transitions directly in the code, rather than hoping a database unique constraint will save the day. Additionally, the async loop is exceptionally fast for lightweight state changes, easily processing thousands of events per second in a single thread.
 
-### What problem does it solve?
-It solves the core requirement of the assignment: **Correctness before cleverness**. 
-- **Concurrency (Two workers reserving the same agent)** is prevented by assigning a `version` integer to the agent state. When a reservation is attempted, we check `current_version == expected_version`. If a concurrent routine already reserved the agent, the version bumps, and the second routine's reservation fails (CAS).
-- **Out of Order Events / Duplicates** are solved by tracking `events_seen` on the call object (idempotency) and enforcing monotonic state progression (e.g. you cannot go from `CONNECTED` back to `INITIATED`).
+### Trade-offs and Limitations
+The obvious drawback of an entirely in-memory, single-threaded architecture is horizontal scaling. You cannot simply spin up ten instances of this application behind a load balancer because they won't share the same `DataStore`.
 
-### What does it make harder?
-Scaling beyond a single machine. Because the datastore is in-memory and relies on `asyncio.Lock`, you cannot easily run 10 separate Docker containers handling 100,000 agents. At that scale, you would break first on CPU bound processing of the asyncio event loop or run out of memory. 
-To scale horizontally, the `DataStore` would need to be replaced with Redis (for state caching and PubSub) and PostgreSQL (for persistent state logging), using Redis Lua scripts or optimistic locking to recreate the CAS behavior.
+If we needed to abruptly scale this to manage 100,000 active agents across multiple server nodes, the `asyncio` loop would inevitably become a CPU bottleneck, and the lack of shared state would fracture the system. 
+To resolve that scaling limit, the `DataStore` class would need to be swapped out for **Redis** (handling rapid PubSub events and caching) and **PostgreSQL** (acting as the permanent source of truth). We would use Redis Lua scripts to maintain the atomic Compare-And-Swap agent reservation behavior we currently have in Python.
 
-## Final Question
-**How would you build a SmartDialer that gets as much of the utilization benefit of predictive dialing as possible, while retaining the deterministic safety characteristics of progressive dialing?**
+## Blending Predictive Utilization with Progressive Safety
 
-You achieve this by firmly decoupling the **Pacing Logic (Prediction)** from the **Safety Bounds (Deterministic Limits)**.
+**The Prompt:** *How would you build a SmartDialer that gets as much of the utilization benefit of predictive dialing as possible, while retaining the deterministic safety characteristics of progressive dialing?*
 
-1. **The Pacing Engine** is allowed to be aggressive. It uses statistical models (average answer rate, average call duration, historical drop rates) to predict that we need 15 dials to connect 5 calls. It outputs a requested number.
-2. **The Safety Controller** acts as an impermeable firewall. Before those 15 dials are handed to the Allocator, the Safety Controller evaluates the current real-world metrics.
-   - If the trailing 5-minute abandon rate exceeds compliance limits (e.g., 3%), the Safety Controller immediately truncates the request from 15 down to the number of strictly available agents (Progressive Mode).
-   - If provider failure rates spike, it drops the request to 0.
+The solution lies in maintaining a strict, physical separation of concerns between the predictive algorithm and the call execution layer. 
 
-By enforcing the boundary at the Safety Controller, the prediction algorithm can iterate and take risks, knowing that the Safety Controller will forcibly clamp its output back to Progressive safety constraints the moment real-world reality deviates from the prediction.
+1. **The Predictor (Pacing Logic)**
+   This component is mathematically aggressive. It looks at historical talk times, current ringing calls, and drop rates to generate a raw integer of "desired outbound dials." It is allowed to be wrong, and it is allowed to take risks.
+   
+2. **The Governor (Safety Controller)**
+   This component sits directly between the Predictor and the Call Allocator. It acts as an absolute, deterministic firewall. Regardless of what the Predictor asks for, the Governor evaluates real-time, hard metrics (e.g., "Is our trailing 5-minute abandon rate currently above 3%?"). 
+   - If the metrics are clean, it permits the Predictor's aggressive volume. 
+   - The exact millisecond the compliance thresholds are breached, or if the telecom provider begins timing out, the Governor instantly clamps the dial request down to a 1:1 ratio (Progressive Mode) or outright zeroes it.
+
+By isolating these two concepts, you give the statistical model room to chase maximum utilization, entirely secured by the knowledge that the deterministic firewall will physically prevent it from violating compliance thresholds.
