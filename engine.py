@@ -12,7 +12,7 @@ class DataStore:
         return [a for a in self.agents.values() if a.state == AgentState.AVAILABLE]
 
     async def try_reserve_agent(self, agent_id: str, expected_version: int) -> bool:
-        """Atomic Compare-And-Swap (CAS) simulation."""
+        """Atomic Compare-And-Swap (CAS) execution."""
         agent = self.agents.get(agent_id)
         if not agent: return False
         

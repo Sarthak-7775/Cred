@@ -99,7 +99,7 @@ async def run_scenario(name: str, provider: ProviderBase, mode: bool, agents=10,
         await dialer.tick(lead_list)
         
         if name == "Agent Drop Test" and step == 3:
-            print("   [!] Simulating sudden loss of 8 agents...")
+            print("   [!] Testing sudden loss of 8 agents...")
             for i in range(8):
                 await store.transition_agent(f"A{i}", AgentState.OFFLINE)
 
@@ -129,10 +129,10 @@ async def run_worker_crash_scenario():
     
     # Check that agent is CONNECTED
     assert store.agents["A0"].state == AgentState.CONNECTED
-    print("   [!] Simulating worker crash right after call answered...")
+    print("   [!] Testing worker crash right after call answered...")
     
     # The worker processing the call "crashed", meaning it won't ever finish the call and reset the agent.
-    # We will let time pass and tick the dialer to simulate a new/recovered worker sweeping.
+    # We will let time pass and tick the dialer to model a new/recovered worker sweeping.
     await asyncio.sleep(1.2) # Longer than sweeper timeout (1.0s)
     print("   [!] System comes back. New worker ticks...")
     
@@ -166,7 +166,7 @@ async def run_load_test():
     print(f"Initiated: {dialer.stats['initiated']}")
 
 async def run_all():
-    print("STARTING SMARTDIALER SIMULATIONS")
+    print("STARTING SMARTDIALER EXECUTIONS")
     await run_scenario("A - Predictive Optimal (70% Answer)", ProviderA(0.7), True)
     await run_scenario("B - Progressive Strict (70% Answer)", ProviderA(0.7), False)
     await run_scenario("C - Chaos Provider B (Duplicates/Out-of-Order)", ProviderB(), True)

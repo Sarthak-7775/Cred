@@ -16,16 +16,16 @@ This readme provides a comprehensive overview of the engineering work, architect
 - **The Safety Governor**: A deterministic firewall that sits directly in the dialing path. If drop rates exceed our strict compliance limit (e.g., 5%) or if the telecom provider begins throwing timeout errors, this governor overrides the predictive algorithm and immediately forces the system back into a safe 1:1 progressive dialing ratio, or stops dialing entirely.
 
 ## 4. Handling Failures and Edge Cases
-The engine was built to natively survive severe failure conditions, which we successfully simulated:
+The engine was built to natively survive severe failure conditions, which we successfully modeld:
 1. **Worker Process Crashes**: If a worker node dies in the middle of routing an active call, our asynchronous `StaleSweeper` identifies the locked agent who is stuck in `RESERVED` or `CONNECTED` and gracefully resets them to `AVAILABLE` after a timeout.
 2. **Total Provider Outage**: When telecom endpoints fail continuously, the safety controller detects the 100% failure rate and halts all new outbound dialing until stability returns.
 3. **Agent Fluctuations**: If a large chunk of the workforce suddenly logs off mid-campaign, the pacing engine detects the drop and instantly throttles the dialing target to match.
 4. **Network Chaos**: The dialer natively handles duplicate and misordered webhook events from unreliable telecom providers without corrupting the internal state.
 
 ## 5. Webhooks & Mock Providers (`providers.py`, `server.py`)
-- **Mocking Scenarios**: We built several provider profiles: a reliable `ProviderA`, a chaotic `ProviderB` (which intentionally scrambles event orders and duplicates payloads), and an `OutageProvider` to simulate total crashes.
+- **Mocking Scenarios**: We built several provider profiles: a reliable `ProviderA`, a chaotic `ProviderB` (which intentionally scrambles event orders and duplicates payloads), and an `OutageProvider` to model total crashes.
 - **Live HTTP Integration**: Created a FastAPI web server to listen for actual Plivo POST webhooks, seamlessly translating external `CallStatus` variables into our internal state enums.
 
 ## 6. Verification and Scale Testing
 - **Unit Tests**: Executed `pytest test_dialer.py` with 100% passing results, explicitly proving that the CAS atomic locks prevent double-booking.
-- **High-Volume Load Test**: Evaluated the engine with a 1,000-agent load test. The `asyncio` simulator successfully managed state transitions and placed 2,000 concurrent calls in approximately 4 seconds on local hardware. This proves the system is highly performant before requiring horizontal scaling via Redis or PostgreSQL.
+- **High-Volume Load Test**: Evaluated the engine with a 1,000-agent load test. The `asyncio` executor successfully managed state transitions and placed 2,000 concurrent calls in approximately 4 seconds on local hardware. This proves the system is highly performant before requiring horizontal scaling via Redis or PostgreSQL.

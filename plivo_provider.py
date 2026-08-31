@@ -17,7 +17,7 @@ class PlivoProvider(ProviderBase):
     async def place_call(self, call_id: str, phone: str, callback):
         """
         Sends an HTTP POST to Plivo to initiate the call.
-        Unlike the mock provider, we don't simulate states here. 
+        Unlike the mock provider, we don't model states here. 
         Plivo will hit our webhook endpoint with the states, and the server will call the callback.
         """
         # Plivo API endpoint

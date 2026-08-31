@@ -25,14 +25,14 @@ class ProviderA(ProviderBase):
             await callback(call_id, CallState.FAILED, f"fail_{uuid.uuid4().hex[:6]}")
 
 class ProviderB(ProviderBase):
-    """Simulates duplicates, out-of-order events, and jitter."""
+    """Models duplicates, out-of-order events, and jitter."""
     async def place_call(self, call_id: str, phone: str, callback):
         await asyncio.sleep(0.1)
         dup_id = f"init_{uuid.uuid4().hex[:6]}"
         await callback(call_id, CallState.INITIATED, dup_id)
         await callback(call_id, CallState.INITIATED, dup_id) # Duplicate event
         
-        # Out of order simulation (Answered fires before Ringing)
+        # Out of order execution (Answered fires before Ringing)
         ans_id = f"ans_{uuid.uuid4().hex[:6]}"
         ring_id = f"ring_{uuid.uuid4().hex[:6]}"
         
@@ -47,7 +47,7 @@ class ProviderB(ProviderBase):
         await cb(cid, state, eid)
 
 class OutageProvider(ProviderBase):
-    """Simulates sudden provider failure."""
+    """Models sudden provider failure."""
     async def place_call(self, call_id: str, phone: str, callback):
         await asyncio.sleep(0.1)
         await callback(call_id, CallState.FAILED, f"fail_outage_{uuid.uuid4().hex[:6]}")

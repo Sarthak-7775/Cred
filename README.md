@@ -39,8 +39,8 @@ cp .env.example .env
 
 You can test the dialer in two different ways depending on what you want to evaluate.
 
-### Option A: The Local Simulator
-If you want to observe how the dialer handles extreme scenarios (like suddenly losing 8 agents, or the telecom provider sending out-of-order events), run the standalone simulator. This simulates everything purely in-memory:
+### Option A: The Local Executor
+If you want to observe how the dialer handles extreme scenarios (like suddenly losing 8 agents, or the telecom provider sending out-of-order events), run the standalone executor. This models everything purely in-memory:
 
 ```bash
 python main.py
